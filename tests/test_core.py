@@ -3,7 +3,7 @@
 import numpy as np
 
 from raw_to_png import core
-from raw_to_png.core import extract_chromatograms, render_png
+from raw_to_png.core import extract_chromatograms, render_png, top_peaks
 
 from conftest import FakeReader
 
@@ -39,6 +39,36 @@ def test_uses_enum_value_not_int(mixed_scans):
     # FakeMsOrder is not an int; int() on it would raise, so a passing run proves
     # the production code compares .value.
     extract_chromatograms(FakeReader(mixed_scans), ms_level=1)
+
+
+def test_top_peaks_picks_highest_separated():
+    rt = np.arange(0, 10, dtype=float)
+    y = np.array([1, 9, 2, 3, 8, 1, 7, 2, 6, 1], dtype=float)
+    # min_sep_frac=0 means no separation constraint -> pure top-n by height.
+    idx = top_peaks(rt, y, n=3, min_sep_frac=0.0)
+    assert list(idx) == sorted([1, 4, 6])  # the 9, 8, 7
+    # Returned indices are sorted by retention time.
+    assert list(idx) == sorted(idx)
+
+
+def test_top_peaks_enforces_separation():
+    rt = np.arange(0, 10, dtype=float)  # span 9
+    # Two tall adjacent scans (idx 4,5) belong to one peak; separation should
+    # keep only the taller of the pair, then move to the next distinct peak.
+    y = np.array([1, 1, 1, 1, 10, 9, 1, 1, 8, 1], dtype=float)
+    idx = top_peaks(rt, y, n=2, min_sep_frac=0.3)  # min_sep = 2.7 min
+    assert list(idx) == [4, 8]  # not 4 and 5
+
+
+def test_top_peaks_fewer_than_n():
+    rt = np.array([0.0, 1.0])
+    y = np.array([5.0, 3.0])
+    assert list(top_peaks(rt, y, n=5)) == [0, 1]
+
+
+def test_top_peaks_empty():
+    empty = np.asarray([])
+    assert top_peaks(empty, empty, n=5).size == 0
 
 
 def test_render_png_writes_file(tmp_path, monkeypatch):

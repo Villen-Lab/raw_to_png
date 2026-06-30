@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from raw_to_png.core import render_png
+from raw_to_png.core import DEFAULT_PEAK_LABELS, render_png
 
 
 def find_raw_files(in_dir):
@@ -30,6 +30,9 @@ def build_parser():
     p.add_argument("--ms-level", type=int, default=1,
                    help="MS order to plot (1=MS1, default). Use 0 for all scans.")
     p.add_argument("--dpi", type=int, default=200, help="Output PNG resolution")
+    p.add_argument("--peak-labels", type=int, default=DEFAULT_PEAK_LABELS,
+                   help="Label the N most abundant peaks per panel with their "
+                        "intensity (default 5). Use 0 to disable.")
     return p
 
 
@@ -51,7 +54,8 @@ def main(argv=None):
     for raw in raw_files:
         print(f"Processing {raw.name}")
         try:
-            render_png(raw, out_dir, ms_level=ms_level, dpi=args.dpi)
+            render_png(raw, out_dir, ms_level=ms_level, dpi=args.dpi,
+                       n_peak_labels=args.peak_labels)
         except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
             print(f"  ! failed on {raw.name}: {e}")
 

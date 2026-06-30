@@ -24,6 +24,64 @@ import matplotlib.pyplot as plt  # noqa: E402  (must follow matplotlib.use)
 TIC_COLOR = "#1f4e79"  # dark blue
 BPC_COLOR = "#7d2e2e"  # dark red
 
+# How many of the most abundant peaks to label, and how far apart (as a fraction
+# of the retention-time span) two labelled peaks must be so we don't tag several
+# adjacent scans of the same peak.
+DEFAULT_PEAK_LABELS = 5
+PEAK_MIN_SEP_FRAC = 0.01
+
+
+def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
+    """Return indices of the ``n`` most abundant, well-separated peaks.
+
+    Greedy: take the highest point, then the next-highest that is at least
+    ``min_sep_frac`` of the RT span away from every point already chosen, and so
+    on. This keeps the picks on *distinct* chromatographic peaks rather than
+    several scans straddling one apex. Returned indices are sorted by RT.
+    """
+    if y.size == 0:
+        return np.array([], dtype=int)
+    span = float(rt.max() - rt.min())
+    min_sep = min_sep_frac * span if span > 0 else 0.0
+
+    chosen = []
+    for idx in np.argsort(y)[::-1]:  # highest intensity first
+        if len(chosen) >= n:
+            break
+        if all(abs(rt[idx] - rt[c]) >= min_sep for c in chosen):
+            chosen.append(int(idx))
+    return np.array(sorted(chosen), dtype=int)
+
+
+def _sci_label(v):
+    """Format an intensity as mathtext scientific notation, e.g. 3.80x10^10."""
+    if v <= 0:
+        return "0"
+    exp = int(np.floor(np.log10(v)))
+    mant = v / 10**exp
+    return rf"${mant:.2f}\times10^{{{exp}}}$"
+
+
+def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS):
+    """Mark and label the n most abundant peaks with their intensity."""
+    if n <= 0 or y.size == 0:
+        return
+    idx = top_peaks(rt, y, n=n)
+    ax.scatter(rt[idx], y[idx], s=14, color=color, zorder=5)
+    for i in idx:
+        ax.annotate(
+            _sci_label(y[i]),
+            xy=(rt[i], y[i]),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color=color,
+        )
+    # Headroom so the topmost label isn't clipped by the axes.
+    ax.set_ylim(top=float(y.max()) * 1.18)
+
 
 def extract_chromatograms(reader, ms_level=1):
     """Return ``(rt, tic, bpc)`` numpy arrays from an already-open reader.
@@ -86,8 +144,11 @@ def get_chromatograms(raw_path, ms_level=1):
         reader.dispose()
 
 
-def render_png(raw_path, out_dir, ms_level=1, dpi=200):
+def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
+
+    The ``n_peak_labels`` most abundant peaks in each panel are marked and
+    labelled with their intensity in scientific notation (0 disables labelling).
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
@@ -117,6 +178,10 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200):
     for ax in (ax_tic, ax_bpc):
         ax.margins(x=0)
         ax.grid(True, alpha=0.25)
+
+    # Label the most abundant peaks in each panel.
+    _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels)
+    _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels)
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)  # gitignored; absent on fresh clone

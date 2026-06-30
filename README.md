@@ -66,6 +66,12 @@ raw-to-png --in . --out .\out --ms-level 0 --dpi 300
 | `--out`      | —       | Output directory for PNGs, created if absent (required) |
 | `--ms-level` | `1`     | MS order to plot (1 = MS1). **`0` = all scans.**     |
 | `--dpi`      | `200`   | Output PNG resolution                                |
+| `--peak-labels` | `5`  | Label the N most abundant peaks per panel with their intensity. **`0` disables.** |
+
+The N most abundant, well-separated peaks in each panel are marked with a dot and
+labelled with their intensity in scientific notation. "Well-separated" means peaks
+must be at least 1 % of the retention-time span apart, so several scans straddling
+one apex aren't all labelled as separate peaks.
 
 The batch is **fail-soft**: a bad `.RAW` is logged and skipped without aborting
 the rest. A file with no scans at the requested MS level is skipped with a warning.
