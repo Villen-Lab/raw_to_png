@@ -12,6 +12,7 @@ only runs on Windows / .NET):
   fisher_py / .NET is unavailable (e.g. Linux CI).
 """
 
+import math
 from pathlib import Path
 
 import numpy as np
@@ -31,8 +32,20 @@ DEFAULT_PEAK_LABELS = 5
 PEAK_MIN_SEP_FRAC = 0.01
 
 # How close (as a fraction of the RT span) two peak labels may be before the
-# later one is staggered onto a higher row to avoid overlap. ~one label width.
-DEFAULT_LABEL_SPACING = 0.05
+# later one is staggered onto a higher row to avoid overlap. The default is
+# negative so staggering never triggers (rt gaps are >= 0): rotated labels (see
+# DEFAULT_LABEL_ROTATION) clear each other horizontally, so vertical stacking is
+# off by default. Raise it (e.g. 0.05) to bring stacking back for upright labels.
+DEFAULT_LABEL_SPACING = -0.01
+
+# Angle (degrees, counter-clockwise) the peak labels are drawn at; slanting them
+# lets adjacent labels sit side by side without overlapping or needing to stack.
+DEFAULT_LABEL_ROTATION = -60
+
+# Label font sizes (points). The m/z line is deliberately a couple of points
+# smaller than the intensity / charge lines so it reads as secondary detail.
+PEAK_LABEL_FONTSIZE = 8
+MZ_LABEL_FONTSIZE = 6
 
 
 def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
@@ -66,6 +79,44 @@ def _sci_label(v):
     return rf"${mant:.2f}\times10^{{{exp}}}$"
 
 
+def _peak_label_lines(intensity, mz=None, charge=None,
+                      show_intensity=True, show_mz=False, show_charge=False):
+    """Build a peak's label as a list of ``(text, fontsize)`` lines.
+
+    Each of intensity / ``m/z`` / charge is its own opt-in line, so a label can
+    carry any combination (e.g. m/z only, with the intensity line suppressed via
+    ``show_intensity=False``). Each line carries its own font size — the m/z line
+    is smaller (``MZ_LABEL_FONTSIZE``) than the intensity / charge lines — which is
+    why the lines are drawn as separate annotations rather than one ``\\n``-joined
+    string (a single matplotlib Text can't mix sizes). ``mz``/``charge`` that are
+    missing or unassigned (``None``/non-finite) render as ``?`` rather than being
+    dropped, so an opted-in column stays visually aligned across peaks. For the TIC
+    panel the supplied ``mz``/``charge`` are the scan's *base peak* (its tallest
+    ion), since a TIC value itself has no single m/z. Empty when nothing selected.
+    """
+    lines = []
+    if show_intensity:
+        lines.append((_sci_label(intensity), PEAK_LABEL_FONTSIZE))
+    if show_mz:
+        ok = mz is not None and np.isfinite(mz) and mz > 0
+        lines.append((rf"$m/z$ {mz:.4f}" if ok else r"$m/z$ ?", MZ_LABEL_FONTSIZE))
+    if show_charge:
+        ok = charge is not None and np.isfinite(charge) and charge > 0
+        lines.append((f"z={int(charge)}" if ok else "z=?", PEAK_LABEL_FONTSIZE))
+    return lines
+
+
+def _peak_label(intensity, mz=None, charge=None,
+                show_intensity=True, show_mz=False, show_charge=False):
+    """The ``\\n``-joined text of a peak label (font sizes dropped).
+
+    A convenience over ``_peak_label_lines`` for callers that only need the text.
+    """
+    return "\n".join(text for text, _ in _peak_label_lines(
+        intensity, mz=mz, charge=charge,
+        show_intensity=show_intensity, show_mz=show_mz, show_charge=show_charge))
+
+
 def _stagger_levels(rt, idx, x_thresh_frac=DEFAULT_LABEL_SPACING):
     """Assign a stacking level to each labelled peak so close labels don't overlap.
 
@@ -87,12 +138,23 @@ def _stagger_levels(rt, idx, x_thresh_frac=DEFAULT_LABEL_SPACING):
 
 
 def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
-                        label_spacing=DEFAULT_LABEL_SPACING):
-    """Mark and label the n most abundant peaks with their intensity.
+                        label_spacing=DEFAULT_LABEL_SPACING,
+                        mz=None, charge=None,
+                        show_intensity=True, show_mz=False, show_charge=False,
+                        rotation=DEFAULT_LABEL_ROTATION):
+    """Mark the n most abundant peaks and label each with the selected fields.
 
-    Labels stay horizontally centred over their peak (so the dot identifies which
-    peak each belongs to) but are staggered vertically when peaks crowd together;
-    ``label_spacing`` controls how readily that staggering kicks in.
+    A peak's label is built from any combination of intensity / m/z / charge (see
+    ``_peak_label_lines``); with all three off the peaks are still dotted but
+    unlabelled. Labels are anchored at their peak (so the dot identifies which peak
+    each belongs to) and slanted by ``rotation`` degrees so neighbours sit side by
+    side. ``label_spacing`` still drives the vertical stagger, but the default is
+    negative (off) because the slant already separates crowded labels; raise it to
+    re-enable stacking.
+
+    Each label's lines are drawn as separate annotations (so the m/z line can use a
+    smaller font); they are offset along the rotation-perpendicular so they read as
+    one slanted block. ``mz``/``charge`` are arrays parallel to ``rt``.
     """
     if n <= 0 or y.size == 0:
         return
@@ -112,19 +174,45 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
                 baselines[j] = base
             start = k
 
+    n_lines = int(show_intensity) + int(show_mz) + int(show_charge)
+    row_pt = 13 * n_lines  # one stacked label's height ~ one row per text line
+    # Each label rises diagonally off its peak: anchored bottom-right at the apex
+    # so the block sits above the trace (never dipping into it), with the first
+    # line (intensity) nearest the dot. Successive lines step along +n, the
+    # perpendicular 90 deg counter-clockwise of the reading direction, which is
+    # straight up (0, 1) at rotation 0 — so the lines fan outward as a tidy block.
+    theta = math.radians(rotation)
+    step = (-math.sin(theta), math.cos(theta))
+    line_gap = 11  # points between stacked lines
     for pos, (i, level) in enumerate(zip(idx, levels)):
-        ax.annotate(
-            _sci_label(y[i]),
-            xy=(rt[i], baselines[pos]),
-            xytext=(0, 4 + 13 * level),  # 13 pt ~ one label row per level
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=8,
-            color=color,
+        lines = _peak_label_lines(
+            y[i],
+            mz=mz[i] if mz is not None else None,
+            charge=charge[i] if charge is not None else None,
+            show_intensity=show_intensity, show_mz=show_mz, show_charge=show_charge,
         )
-    # Headroom so the topmost (possibly staggered) label isn't clipped.
-    headroom = 1.18 + 0.12 * (max(levels) if levels else 0)
+        if not lines:  # nothing selected: leave just the dot
+            continue
+        base_dy = 4 + row_pt * level
+        for li, (text, fs) in enumerate(lines):
+            ax.annotate(
+                text,
+                xy=(rt[i], baselines[pos]),
+                xytext=(step[0] * line_gap * li, base_dy + step[1] * line_gap * li),
+                textcoords="offset points",
+                ha="right",
+                va="bottom",
+                rotation=rotation,
+                rotation_mode="anchor",
+                fontsize=fs,
+                color=color,
+            )
+    # Headroom so the topmost label isn't clipped. Slanted labels rise diagonally
+    # and so need more room than upright ones; the per-level step adds to both.
+    max_level = max(levels) if levels else 0
+    slanted = rotation % 180 != 0
+    base_head = 0.42 if slanted else 0.18 * max(n_lines, 1)
+    headroom = 1.0 + base_head + 0.14 * n_lines * max_level
     ax.set_ylim(top=float(y.max()) * headroom)
 
 
@@ -140,8 +228,35 @@ def _annotate_max(ax, y, color, label):
     )
 
 
-def extract_chromatograms(reader, ms_level=1):
-    """Return ``(rt, tic, bpc)`` numpy arrays from an already-open reader.
+def _base_peak_charge(reader, scan_no):
+    """Best-effort charge state of a scan's base peak, from its centroid stream.
+
+    Returns ``np.nan`` when the centroid stream is unavailable, empty, or carries
+    no assigned charge — common for MS1 / profile data, where Thermo leaves the
+    charge unset. This is why ``--show-charge`` is a lower-confidence option: the
+    value simply does not exist for many scans, and the label renders ``z=?``.
+
+    The reader call is wrapped defensively: a single scan that fails to yield a
+    centroid stream must not abort extraction of the whole run.
+    """
+    try:
+        stream = reader.get_centroid_stream(scan_no, False)
+    except Exception:
+        return np.nan
+    intensities = getattr(stream, "intensities", None)
+    charges = getattr(stream, "charges", None)
+    if intensities is None or charges is None:
+        return np.nan
+    intensities = np.asarray(intensities, dtype=float)
+    charges = np.asarray(charges, dtype=float)
+    if intensities.size == 0 or charges.size != intensities.size:
+        return np.nan
+    z = charges[int(np.argmax(intensities))]
+    return float(z) if np.isfinite(z) and z > 0 else np.nan
+
+
+def extract_chromatograms(reader, ms_level=1, want_charge=False):
+    """Return ``(rt, tic, bpc, bpm, charge)`` numpy arrays from an open reader.
 
     Parameters
     ----------
@@ -149,10 +264,21 @@ def extract_chromatograms(reader, ms_level=1):
         An object exposing the Thermo RawFileReader surface used here:
         ``run_header_ex.first_spectrum`` / ``.last_spectrum``,
         ``get_filter_for_scan_number(n).ms_order`` (a ``MsOrderType`` enum),
-        ``get_scan_stats_for_scan_number(n).tic`` / ``.base_peak_intensity``,
-        and ``retention_time_from_scan_number(n)``.
+        ``get_scan_stats_for_scan_number(n).tic`` / ``.base_peak_intensity`` /
+        ``.base_peak_mass``, ``retention_time_from_scan_number(n)``, and — only
+        when ``want_charge`` — ``get_centroid_stream(n, False)``.
     ms_level
         MS order to keep (1 = MS1). ``None`` keeps every scan.
+    want_charge
+        When True, also resolve each scan's base-peak charge via its centroid
+        stream (see ``_base_peak_charge``). This costs one extra reader call per
+        kept scan, so it is opt-in; when False, ``charge`` is all-``nan``.
+
+    Returns
+    -------
+    rt, tic, bpc, bpm, charge : np.ndarray
+        Per kept scan: retention time (min), total ion current, base-peak
+        intensity, base-peak m/z, and base-peak charge (``nan`` where unknown).
 
     Notes
     -----
@@ -167,7 +293,7 @@ def extract_chromatograms(reader, ms_level=1):
     first = reader.run_header_ex.first_spectrum
     last = reader.run_header_ex.last_spectrum
 
-    rt, tic, bpc = [], [], []
+    rt, tic, bpc, bpm, charge = [], [], [], [], []
     for scan_no in range(first, last + 1):
         if ms_level is not None:
             ms_order = reader.get_filter_for_scan_number(scan_no).ms_order
@@ -177,16 +303,21 @@ def extract_chromatograms(reader, ms_level=1):
         rt.append(reader.retention_time_from_scan_number(scan_no))
         tic.append(stats.tic)
         bpc.append(stats.base_peak_intensity)
+        bpm.append(stats.base_peak_mass)
+        charge.append(_base_peak_charge(reader, scan_no) if want_charge else np.nan)
 
-    return np.asarray(rt), np.asarray(tic), np.asarray(bpc)
+    return (np.asarray(rt), np.asarray(tic), np.asarray(bpc),
+            np.asarray(bpm), np.asarray(charge))
 
 
-def get_chromatograms(raw_path, ms_level=1):
-    """Open one .RAW file via fisher_py and return ``(rt, tic, bpc)`` arrays.
+def get_chromatograms(raw_path, ms_level=1, want_charge=False):
+    """Open one .RAW file via fisher_py and return the chromatogram arrays.
 
-    rt  : retention time (minutes) per included scan
-    tic : total ion current per scan
-    bpc : base-peak intensity per scan
+    rt     : retention time (minutes) per included scan
+    tic    : total ion current per scan
+    bpc    : base-peak intensity per scan
+    bpm    : base-peak m/z per scan
+    charge : base-peak charge per scan (``nan`` unless ``want_charge``)
     """
     # Imported lazily: fisher_py pulls in .NET assemblies that are unavailable
     # on platforms used only to import this module (e.g. CI).
@@ -196,24 +327,34 @@ def get_chromatograms(raw_path, ms_level=1):
     reader = RawFileReaderAdapter.file_factory(str(raw_path))
     try:
         reader.select_instrument(Device.MS, 1)
-        return extract_chromatograms(reader, ms_level=ms_level)
+        return extract_chromatograms(reader, ms_level=ms_level, want_charge=want_charge)
     finally:
         reader.dispose()
 
 
 def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS,
-               label_spacing=DEFAULT_LABEL_SPACING):
+               label_spacing=DEFAULT_LABEL_SPACING, show_mz=False, show_charge=False,
+               show_intensity=True, label_rotation=DEFAULT_LABEL_ROTATION):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
 
-    The ``n_peak_labels`` most abundant peaks in each panel are marked and
-    labelled with their intensity in scientific notation (0 disables labelling).
-    ``label_spacing`` (fraction of the RT span) tunes how close two labels may be
-    before the later one staggers onto a higher row.
+    The ``n_peak_labels`` most abundant peaks in each panel are marked; ``0``
+    disables marking and labelling entirely. Labels are slanted by
+    ``label_rotation`` degrees; ``label_spacing`` (fraction of the RT span) tunes
+    how close two labels may be before the later one staggers onto a higher row
+    (negative => stacking off, relying on the slant to separate them).
+
+    Each marked peak's label is composed of independently selectable fields:
+    ``show_intensity`` (the intensity in scientific notation, on by default),
+    ``show_mz`` (the scan's base-peak m/z), and ``show_charge`` (the base-peak
+    charge, best-effort — ``z=?`` where the .RAW assigns none). Turn ``show_intensity``
+    off to label the peaks with m/z and/or charge alone. For the TIC panel the m/z
+    and charge refer to that scan's tallest ion, since a TIC value has no single m/z.
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
     name = Path(raw_path).stem
-    rt, tic, bpc = get_chromatograms(raw_path, ms_level=ms_level)
+    rt, tic, bpc, bpm, charge = get_chromatograms(
+        raw_path, ms_level=ms_level, want_charge=show_charge)
 
     if rt.size == 0:
         print(f"  ! no MS{ms_level} scans found in {name}, skipping")
@@ -239,11 +380,16 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
         ax.margins(x=0)
         ax.grid(True, alpha=0.25)
 
-    # Label the most abundant peaks in each panel...
+    # Label the most abundant peaks in each panel. Both panels carry the same
+    # per-scan base-peak m/z and charge (for TIC that's the scan's tallest ion).
     _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels,
-                        label_spacing=label_spacing)
+                        label_spacing=label_spacing, mz=bpm, charge=charge,
+                        show_intensity=show_intensity, show_mz=show_mz,
+                        show_charge=show_charge, rotation=label_rotation)
     _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels,
-                        label_spacing=label_spacing)
+                        label_spacing=label_spacing, mz=bpm, charge=charge,
+                        show_intensity=show_intensity, show_mz=show_mz,
+                        show_charge=show_charge, rotation=label_rotation)
     # ...and the panel maximum, large, in the top-left corner.
     _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
     _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")

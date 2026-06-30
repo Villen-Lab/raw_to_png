@@ -9,28 +9,39 @@ from conftest import FakeReader
 
 
 def test_extract_ms1_only(mixed_scans):
-    rt, tic, bpc = extract_chromatograms(FakeReader(mixed_scans), ms_level=1)
+    rt, tic, bpc, bpm, charge = extract_chromatograms(FakeReader(mixed_scans), ms_level=1)
     # Only the 3 MS1 scans should survive.
     assert np.allclose(rt, [0.10, 0.20, 0.30])
     assert np.allclose(tic, [1000.0, 2000.0, 1500.0])
     assert np.allclose(bpc, [500.0, 900.0, 700.0])
+    assert np.allclose(bpm, [400.1234, 524.2671, 612.3456])
+    # Charge is opt-in: defaults to all-nan without want_charge.
+    assert np.all(np.isnan(charge))
 
 
 def test_extract_ms2_only(mixed_scans):
-    rt, _, _ = extract_chromatograms(FakeReader(mixed_scans), ms_level=2)
+    rt, *_ = extract_chromatograms(FakeReader(mixed_scans), ms_level=2)
     assert np.allclose(rt, [0.11, 0.21])
 
 
 def test_extract_all_scans(mixed_scans):
     """ms_level=None keeps every scan regardless of MS order."""
-    rt, _, _ = extract_chromatograms(FakeReader(mixed_scans), ms_level=None)
+    rt, *_ = extract_chromatograms(FakeReader(mixed_scans), ms_level=None)
     assert rt.size == len(mixed_scans)
 
 
 def test_extract_no_matching_scans():
-    only_ms1 = [(1, 0.1, 100.0, 50.0)]
-    rt, tic, bpc = extract_chromatograms(FakeReader(only_ms1), ms_level=2)
-    assert rt.size == tic.size == bpc.size == 0
+    only_ms1 = [(1, 0.1, 100.0, 50.0, 400.0)]
+    rt, tic, bpc, bpm, charge = extract_chromatograms(FakeReader(only_ms1), ms_level=2)
+    assert rt.size == tic.size == bpc.size == bpm.size == charge.size == 0
+
+
+def test_extract_charge_when_requested(charged_scans):
+    """want_charge resolves the base-peak charge; an unassigned (0) charge -> nan."""
+    *_, charge = extract_chromatograms(FakeReader(charged_scans), ms_level=1,
+                                       want_charge=True)
+    assert np.allclose(charge[:2], [2.0, 3.0])
+    assert np.isnan(charge[2])
 
 
 def test_uses_enum_value_not_int(mixed_scans):
@@ -74,9 +85,10 @@ def test_top_peaks_empty():
 def test_stagger_levels_stacks_close_labels():
     rt = np.arange(0, 100, dtype=float)  # span 99, x_thresh = 0.06*99 ~ 5.9
     # Two clusters: {10,12} are close (stack), then 60 is isolated (reset), and
-    # {62} is close to 60 (stack).
+    # {62} is close to 60 (stack). Pass an explicit (positive) threshold since the
+    # default label spacing is now negative — stacking off — by design.
     idx = np.array([10, 12, 60, 62])
-    assert core._stagger_levels(rt, idx) == [0, 1, 0, 1]
+    assert core._stagger_levels(rt, idx, x_thresh_frac=0.06) == [0, 1, 0, 1]
 
 
 def test_stagger_levels_all_isolated():
@@ -99,20 +111,90 @@ def test_stagger_levels_respects_threshold():
     assert core._stagger_levels(rt, idx, x_thresh_frac=0.5) == [0, 1, 2]
 
 
+def _fake_chromatograms(rt):
+    """A get_chromatograms stand-in returning the full 5-array bundle."""
+    return rt, rt * 2, rt * 3, 400.0 + rt * 100, np.full(rt.size, 2.0)
+
+
 def test_render_png_writes_file(tmp_path, monkeypatch):
     rt = np.linspace(0, 1, 10)
     monkeypatch.setattr(core, "get_chromatograms",
-                        lambda path, ms_level=1: (rt, rt * 2, rt * 3))
+                        lambda path, ms_level=1, want_charge=False: _fake_chromatograms(rt))
     out = render_png("sample_file.raw", tmp_path, ms_level=1, dpi=72)
     assert out is not None
     assert out.name == "sample_file.png"
     assert out.exists()
 
 
+def test_render_png_with_mz_and_charge(tmp_path, monkeypatch):
+    """show_mz/show_charge must render without error and forward want_charge."""
+    rt = np.linspace(0, 1, 10)
+    captured = {}
+
+    def fake(path, ms_level=1, want_charge=False):
+        captured["want_charge"] = want_charge
+        return _fake_chromatograms(rt)
+
+    monkeypatch.setattr(core, "get_chromatograms", fake)
+    out = render_png("sample_file.raw", tmp_path, ms_level=1, dpi=72,
+                     show_mz=True, show_charge=True)
+    assert out is not None and out.exists()
+    assert captured["want_charge"] is True  # show_charge drives the extra read
+
+
 def test_render_png_skips_when_empty(tmp_path, monkeypatch):
     empty = np.asarray([])
-    monkeypatch.setattr(core, "get_chromatograms",
-                        lambda path, ms_level=1: (empty, empty, empty))
+    monkeypatch.setattr(
+        core, "get_chromatograms",
+        lambda path, ms_level=1, want_charge=False: (empty, empty, empty, empty, empty))
     out = render_png("empty.raw", tmp_path, ms_level=1)
     assert out is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_peak_label_intensity_only():
+    """Default: just the scientific-notation intensity, single line."""
+    label = core._peak_label(3.8e10)
+    assert "\n" not in label
+    assert "times10" in label  # mathtext scientific notation
+
+
+def test_peak_label_with_mz_and_charge():
+    label = core._peak_label(3.8e10, mz=524.2671, charge=2.0,
+                             show_mz=True, show_charge=True)
+    lines = label.split("\n")
+    assert len(lines) == 3
+    assert "524.2671" in lines[1]
+    assert lines[2] == "z=2"
+
+
+def test_peak_label_lines_mz_font_is_smaller():
+    """The m/z line carries a smaller font than the intensity / charge lines."""
+    (_, intensity_fs), (_, mz_fs), (_, charge_fs) = core._peak_label_lines(
+        3.8e10, mz=524.2671, charge=2.0, show_mz=True, show_charge=True)
+    assert mz_fs == core.MZ_LABEL_FONTSIZE
+    assert intensity_fs == charge_fs == core.PEAK_LABEL_FONTSIZE
+    assert mz_fs < intensity_fs
+
+
+def test_peak_label_mz_only_without_intensity():
+    """show_intensity=False drops the intensity line, leaving m/z alone."""
+    label = core._peak_label(3.8e10, mz=524.2671, show_intensity=False, show_mz=True)
+    assert "\n" not in label
+    assert "times10" not in label  # no intensity line
+    assert "524.2671" in label
+
+
+def test_peak_label_nothing_selected_is_empty():
+    """All fields off -> empty string, so the caller draws just the dot."""
+    assert core._peak_label(3.8e10, show_intensity=False) == ""
+
+
+def test_peak_label_unassigned_renders_question_mark():
+    """Opted-in but missing values stay as aligned '?' rows, not dropped lines."""
+    label = core._peak_label(3.8e10, mz=np.nan, charge=np.nan,
+                             show_mz=True, show_charge=True)
+    lines = label.split("\n")
+    assert len(lines) == 3
+    assert lines[1].endswith("?")
+    assert lines[2] == "z=?"
