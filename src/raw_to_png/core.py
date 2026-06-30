@@ -30,6 +30,10 @@ BPC_COLOR = "#7d2e2e"  # dark red
 DEFAULT_PEAK_LABELS = 5
 PEAK_MIN_SEP_FRAC = 0.01
 
+# How close (as a fraction of the RT span) two peak labels may be before the
+# later one is staggered onto a higher row to avoid overlap. ~one label width.
+DEFAULT_LABEL_SPACING = 0.05
+
 
 def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
     """Return indices of the ``n`` most abundant, well-separated peaks.
@@ -62,13 +66,14 @@ def _sci_label(v):
     return rf"${mant:.2f}\times10^{{{exp}}}$"
 
 
-def _stagger_levels(rt, idx, x_thresh_frac=0.05):
+def _stagger_levels(rt, idx, x_thresh_frac=DEFAULT_LABEL_SPACING):
     """Assign a stacking level to each labelled peak so close labels don't overlap.
 
     ``idx`` is the peak indices sorted by RT. A peak within ``x_thresh_frac`` of
     the RT span of the previous labelled peak is bumped one level higher than it,
     so a horizontal cluster of labels stacks 0, 1, 2, ... up the page. Isolated
-    peaks reset to level 0.
+    peaks reset to level 0. Larger ``x_thresh_frac`` => labels spread apart more
+    readily (stack sooner); smaller => labels stay on the baseline row longer.
     """
     if len(idx) == 0:
         return []
@@ -81,18 +86,20 @@ def _stagger_levels(rt, idx, x_thresh_frac=0.05):
     return levels
 
 
-def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS):
+def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
+                        label_spacing=DEFAULT_LABEL_SPACING):
     """Mark and label the n most abundant peaks with their intensity.
 
     Labels stay horizontally centred over their peak (so the dot identifies which
-    peak each belongs to) but are staggered vertically when peaks crowd together.
+    peak each belongs to) but are staggered vertically when peaks crowd together;
+    ``label_spacing`` controls how readily that staggering kicks in.
     """
     if n <= 0 or y.size == 0:
         return
     idx = top_peaks(rt, y, n=n)
     ax.scatter(rt[idx], y[idx], s=14, color=color, zorder=5)
 
-    levels = _stagger_levels(rt, idx)
+    levels = _stagger_levels(rt, idx, x_thresh_frac=label_spacing)
     # Anchor every label in a horizontal cluster (a run of increasing levels) to
     # that cluster's tallest apex, so the point-offset rows separate the labels
     # cleanly even when the peaks themselves differ in height.
@@ -194,11 +201,14 @@ def get_chromatograms(raw_path, ms_level=1):
         reader.dispose()
 
 
-def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS):
+def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS,
+               label_spacing=DEFAULT_LABEL_SPACING):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
 
     The ``n_peak_labels`` most abundant peaks in each panel are marked and
     labelled with their intensity in scientific notation (0 disables labelling).
+    ``label_spacing`` (fraction of the RT span) tunes how close two labels may be
+    before the later one staggers onto a higher row.
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
@@ -230,8 +240,10 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
         ax.grid(True, alpha=0.25)
 
     # Label the most abundant peaks in each panel...
-    _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels)
-    _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels)
+    _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels,
+                        label_spacing=label_spacing)
+    _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels,
+                        label_spacing=label_spacing)
     # ...and the panel maximum, large, in the top-left corner.
     _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
     _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")

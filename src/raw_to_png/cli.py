@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from raw_to_png.core import DEFAULT_PEAK_LABELS, render_png
+from raw_to_png.core import DEFAULT_LABEL_SPACING, DEFAULT_PEAK_LABELS, render_png
 
 
 def find_raw_files(in_dir):
@@ -33,6 +33,11 @@ def build_parser():
     p.add_argument("--peak-labels", type=int, default=DEFAULT_PEAK_LABELS,
                    help="Label the N most abundant peaks per panel with their "
                         "intensity (default 5). Use 0 to disable.")
+    p.add_argument("--label-spacing", type=float, default=DEFAULT_LABEL_SPACING,
+                   help="How close (fraction of the retention-time span) two peak "
+                        "labels may be before the later one is staggered onto a "
+                        "higher row (default 0.05). Larger spreads labels apart "
+                        "more; smaller keeps them on one row.")
     return p
 
 
@@ -55,7 +60,8 @@ def main(argv=None):
         print(f"Processing {raw.name}")
         try:
             render_png(raw, out_dir, ms_level=ms_level, dpi=args.dpi,
-                       n_peak_labels=args.peak_labels)
+                       n_peak_labels=args.peak_labels,
+                       label_spacing=args.label_spacing)
         except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
             print(f"  ! failed on {raw.name}: {e}")
 

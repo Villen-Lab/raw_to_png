@@ -90,6 +90,15 @@ def test_stagger_levels_empty():
     assert core._stagger_levels(rt, np.array([], dtype=int)) == []
 
 
+def test_stagger_levels_respects_threshold():
+    rt = np.arange(0, 100, dtype=float)  # span 99
+    idx = np.array([10, 12, 14])  # 2 apart
+    # Tiny threshold (0.01*99 < 2): none count as close -> all baseline row.
+    assert core._stagger_levels(rt, idx, x_thresh_frac=0.01) == [0, 0, 0]
+    # Wide threshold (0.5*99): each is close to the prior -> stack up.
+    assert core._stagger_levels(rt, idx, x_thresh_frac=0.5) == [0, 1, 2]
+
+
 def test_render_png_writes_file(tmp_path, monkeypatch):
     rt = np.linspace(0, 1, 10)
     monkeypatch.setattr(core, "get_chromatograms",

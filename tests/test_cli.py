@@ -32,7 +32,7 @@ def test_main_ms_level_0_maps_to_none(tmp_path, monkeypatch):
     (tmp_path / "x.raw").touch()
     captured = {}
 
-    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5):
+    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05):
         captured["ms_level"] = ms_level
         return None
 
@@ -48,7 +48,7 @@ def test_main_one_bad_raw_does_not_abort_batch(tmp_path, monkeypatch):
         (tmp_path / n).touch()
     seen = []
 
-    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5):
+    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05):
         seen.append(raw.name)
         if raw.name == "bad.raw":
             raise RuntimeError("boom")
@@ -65,16 +65,30 @@ def test_parser_defaults():
     assert args.ms_level == 1
     assert args.dpi == 200
     assert args.peak_labels == 5
+    assert args.label_spacing == 0.05
 
 
 def test_main_peak_labels_passed_through(tmp_path, monkeypatch):
     (tmp_path / "x.raw").touch()
     captured = {}
 
-    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5):
+    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05):
         captured["n_peak_labels"] = n_peak_labels
         return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--peak-labels", "3"])
     assert captured["n_peak_labels"] == 3
+
+
+def test_main_label_spacing_passed_through(tmp_path, monkeypatch):
+    (tmp_path / "x.raw").touch()
+    captured = {}
+
+    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05):
+        captured["label_spacing"] = label_spacing
+        return None
+
+    monkeypatch.setattr(cli, "render_png", fake_render)
+    main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--label-spacing", "0.1"])
+    assert captured["label_spacing"] == 0.1
