@@ -1,0 +1,32 @@
+# Mass-spec input data (excluded due to size)
+*.raw
+*.RAW
+raw_data/
+RAWs/
+
+# Generated output
+*.png
+output/
+out/
+# ...but keep the documentation example image
+!docs/example.png
+
+# Python cruft
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

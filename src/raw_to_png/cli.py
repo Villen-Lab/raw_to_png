@@ -1,0 +1,63 @@
+"""Command-line interface: batch-render PNGs for every .RAW in a directory."""
+
+import argparse
+import sys
+from pathlib import Path
+
+from raw_to_png.core import render_png
+
+
+def find_raw_files(in_dir):
+    """Return the sorted, de-duplicated list of .RAW files in ``in_dir``.
+
+    Globs both ``*.raw`` and ``*.RAW`` then de-dupes via ``set()``: a
+    case-insensitive filesystem (Windows) would otherwise list each file twice.
+    """
+    in_dir = Path(in_dir)
+    raw_files = list(in_dir.glob("*.raw")) + list(in_dir.glob("*.RAW"))
+    return sorted(set(raw_files))
+
+
+def build_parser():
+    p = argparse.ArgumentParser(
+        prog="raw-to-png",
+        description="Render TIC + base-peak chromatogram PNGs from Thermo .RAW files.",
+    )
+    p.add_argument("--in", dest="in_dir", required=True,
+                   help="Directory containing .RAW files")
+    p.add_argument("--out", dest="out_dir", required=True,
+                   help="Directory to write PNGs (created if absent)")
+    p.add_argument("--ms-level", type=int, default=1,
+                   help="MS order to plot (1=MS1, default). Use 0 for all scans.")
+    p.add_argument("--dpi", type=int, default=200, help="Output PNG resolution")
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+
+    in_dir = Path(args.in_dir)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # 0 is the sentinel for "all scans" -> None disables MS-level filtering.
+    ms_level = None if args.ms_level == 0 else args.ms_level
+
+    raw_files = find_raw_files(in_dir)
+    if not raw_files:
+        print(f"No .RAW files found in {in_dir}")
+        return 1
+
+    print(f"Found {len(raw_files)} .RAW file(s)")
+    for raw in raw_files:
+        print(f"Processing {raw.name}")
+        try:
+            render_png(raw, out_dir, ms_level=ms_level, dpi=args.dpi)
+        except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
+            print(f"  ! failed on {raw.name}: {e}")
+
+    print("Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
