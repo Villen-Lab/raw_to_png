@@ -62,25 +62,75 @@ def _sci_label(v):
     return rf"${mant:.2f}\times10^{{{exp}}}$"
 
 
+def _stagger_levels(rt, idx, x_thresh_frac=0.05):
+    """Assign a stacking level to each labelled peak so close labels don't overlap.
+
+    ``idx`` is the peak indices sorted by RT. A peak within ``x_thresh_frac`` of
+    the RT span of the previous labelled peak is bumped one level higher than it,
+    so a horizontal cluster of labels stacks 0, 1, 2, ... up the page. Isolated
+    peaks reset to level 0.
+    """
+    if len(idx) == 0:
+        return []
+    x_span = float(rt.max() - rt.min())
+    x_thresh = x_thresh_frac * x_span
+    levels = [0]
+    for k in range(1, len(idx)):
+        close = (rt[idx[k]] - rt[idx[k - 1]]) < x_thresh
+        levels.append(levels[-1] + 1 if close else 0)
+    return levels
+
+
 def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS):
-    """Mark and label the n most abundant peaks with their intensity."""
+    """Mark and label the n most abundant peaks with their intensity.
+
+    Labels stay horizontally centred over their peak (so the dot identifies which
+    peak each belongs to) but are staggered vertically when peaks crowd together.
+    """
     if n <= 0 or y.size == 0:
         return
     idx = top_peaks(rt, y, n=n)
     ax.scatter(rt[idx], y[idx], s=14, color=color, zorder=5)
-    for i in idx:
+
+    levels = _stagger_levels(rt, idx)
+    # Anchor every label in a horizontal cluster (a run of increasing levels) to
+    # that cluster's tallest apex, so the point-offset rows separate the labels
+    # cleanly even when the peaks themselves differ in height.
+    baselines = [float(v) for v in y[idx]]
+    start = 0
+    for k in range(1, len(idx) + 1):
+        if k == len(idx) or levels[k] == 0:
+            base = max(baselines[start:k])
+            for j in range(start, k):
+                baselines[j] = base
+            start = k
+
+    for pos, (i, level) in enumerate(zip(idx, levels)):
         ax.annotate(
             _sci_label(y[i]),
-            xy=(rt[i], y[i]),
-            xytext=(0, 4),
+            xy=(rt[i], baselines[pos]),
+            xytext=(0, 4 + 13 * level),  # 13 pt ~ one label row per level
             textcoords="offset points",
             ha="center",
             va="bottom",
             fontsize=8,
             color=color,
         )
-    # Headroom so the topmost label isn't clipped by the axes.
-    ax.set_ylim(top=float(y.max()) * 1.18)
+    # Headroom so the topmost (possibly staggered) label isn't clipped.
+    headroom = 1.18 + 0.12 * (max(levels) if levels else 0)
+    ax.set_ylim(top=float(y.max()) * headroom)
+
+
+def _annotate_max(ax, y, color, label):
+    """Write the max intensity in a large bold label in the panel's top-left."""
+    if y.size == 0:
+        return
+    ax.text(
+        0.012, 0.95, f"{label}: {_sci_label(float(y.max()))}",
+        transform=ax.transAxes, ha="left", va="top",
+        fontsize=13, fontweight="bold", color=color,
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.85),
+    )
 
 
 def extract_chromatograms(reader, ms_level=1):
@@ -179,9 +229,12 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
         ax.margins(x=0)
         ax.grid(True, alpha=0.25)
 
-    # Label the most abundant peaks in each panel.
+    # Label the most abundant peaks in each panel...
     _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels)
     _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels)
+    # ...and the panel maximum, large, in the top-left corner.
+    _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
+    _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)  # gitignored; absent on fresh clone

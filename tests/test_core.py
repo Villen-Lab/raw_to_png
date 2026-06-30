@@ -71,6 +71,25 @@ def test_top_peaks_empty():
     assert top_peaks(empty, empty, n=5).size == 0
 
 
+def test_stagger_levels_stacks_close_labels():
+    rt = np.arange(0, 100, dtype=float)  # span 99, x_thresh = 0.06*99 ~ 5.9
+    # Two clusters: {10,12} are close (stack), then 60 is isolated (reset), and
+    # {62} is close to 60 (stack).
+    idx = np.array([10, 12, 60, 62])
+    assert core._stagger_levels(rt, idx) == [0, 1, 0, 1]
+
+
+def test_stagger_levels_all_isolated():
+    rt = np.arange(0, 100, dtype=float)
+    idx = np.array([5, 40, 80])
+    assert core._stagger_levels(rt, idx) == [0, 0, 0]
+
+
+def test_stagger_levels_empty():
+    rt = np.arange(0, 10, dtype=float)
+    assert core._stagger_levels(rt, np.array([], dtype=int)) == []
+
+
 def test_render_png_writes_file(tmp_path, monkeypatch):
     rt = np.linspace(0, 1, 10)
     monkeypatch.setattr(core, "get_chromatograms",
