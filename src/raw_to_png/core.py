@@ -171,27 +171,21 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
     ax.scatter(rt[idx], y[idx], s=14, color=color, zorder=5)
 
     levels = _stagger_levels(rt, idx, x_thresh_frac=label_spacing)
-    # Anchor every label in a horizontal cluster (a run of increasing levels) to
-    # that cluster's tallest apex, so the point-offset rows separate the labels
-    # cleanly even when the peaks themselves differ in height.
-    baselines = [float(v) for v in y[idx]]
-    start = 0
-    for k in range(1, len(idx) + 1):
-        if k == len(idx) or levels[k] == 0:
-            base = max(baselines[start:k])
-            for j in range(start, k):
-                baselines[j] = base
-            start = k
 
     n_lines = int(show_intensity) + int(show_mz) + int(show_charge)
     row_pt = 13 * n_lines  # one stacked label's height ~ one row per text line
-    # Each label rises diagonally off its peak: anchored bottom-right at the apex
-    # so the block sits above the trace (never dipping into it), with the first
-    # line (intensity) nearest the dot. Successive lines step along +n, the
-    # perpendicular 90 deg counter-clockwise of the reading direction, which is
-    # straight up (0, 1) at rotation 0 — so the lines fan outward as a tidy block.
+    # Each label starts at its own peak's tip and rises clear of the trace. The
+    # text is anchored at the apex with its bottom there (va="bottom"); the
+    # horizontal alignment is chosen from the slant so the body extends into the
+    # upper half-plane for any rotation — left when the text reads upward (e.g.
+    # +90 deg, vertical), right when it reads downward (e.g. the -60 default),
+    # centred when horizontal. Successive lines step along +n, the perpendicular
+    # 90 deg counter-clockwise of the reading direction, so they fan outward as a
+    # tidy block (the first line sits nearest the dot).
     theta = math.radians(rotation)
     step = (-math.sin(theta), math.cos(theta))
+    sin_t = math.sin(theta)
+    ha = "left" if sin_t > 1e-9 else "right" if sin_t < -1e-9 else "center"
     line_gap = 11  # points between stacked lines
     for pos, (i, level) in enumerate(zip(idx, levels)):
         lines = _peak_label_lines(
@@ -207,21 +201,24 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
         for li, (text, fs) in enumerate(lines):
             ax.annotate(
                 text,
-                xy=(rt[i], baselines[pos]),
+                xy=(rt[i], float(y[i])),  # anchor at this peak's own tip
                 xytext=(step[0] * line_gap * li, base_dy + step[1] * line_gap * li),
                 textcoords="offset points",
-                ha="right",
+                ha=ha,
                 va="bottom",
                 rotation=rotation,
                 rotation_mode="anchor",
                 fontsize=fs,
                 color=color,
             )
-    # Headroom so the topmost label isn't clipped. Slanted labels rise diagonally
-    # and so need more room than upright ones; the per-level step adds to both.
+    # Headroom so the topmost label isn't clipped. Rotated labels rise off the
+    # peak, and the closer to vertical the taller they stand, so scale the reserve
+    # with |sin(rotation)|; the per-level stagger step adds more on top.
     max_level = max(levels) if levels else 0
-    slanted = rotation % 180 != 0
-    base_head = 0.42 if slanted else 0.18 * max(n_lines, 1)
+    if rotation % 180 != 0:
+        base_head = 0.30 + 0.40 * abs(sin_t)
+    else:
+        base_head = 0.18 * max(n_lines, 1)
     headroom = 1.0 + base_head + 0.14 * n_lines * max_level
     ax.set_ylim(top=float(y.max()) * headroom)
 
