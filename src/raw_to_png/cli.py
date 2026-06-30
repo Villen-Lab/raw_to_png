@@ -7,6 +7,7 @@ from pathlib import Path
 from raw_to_png.core import (
     DEFAULT_LABEL_ROTATION,
     DEFAULT_LABEL_SPACING,
+    DEFAULT_MZ_DECIMALS,
     DEFAULT_PEAK_LABELS,
     render_png,
 )
@@ -59,6 +60,10 @@ def build_parser():
                    help="Also label each peak with its scan's base-peak charge "
                         "state. Best-effort: shows 'z=?' when the .RAW assigns no "
                         "charge (common for MS1) and costs an extra read per scan.")
+    p.add_argument("--decimals", dest="mz_decimals", type=int,
+                   default=DEFAULT_MZ_DECIMALS, metavar="N",
+                   help="Decimal places shown for m/z values "
+                        f"(default {DEFAULT_MZ_DECIMALS}). Only affects --show-mz.")
     p.add_argument("--hide-intensity", action="store_true",
                    help="Drop the intensity line from peak labels, leaving only "
                         "--show-mz / --show-charge. Use e.g. --top-peaks 5 "
@@ -90,7 +95,8 @@ def main(argv=None):
                        label_spacing=args.label_spacing,
                        show_mz=args.show_mz, show_charge=args.show_charge,
                        show_intensity=not args.hide_intensity,
-                       label_rotation=args.label_rotation)
+                       label_rotation=args.label_rotation,
+                       mz_decimals=args.mz_decimals)
         except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
             print(f"  ! failed on {raw.name}: {e}")
 

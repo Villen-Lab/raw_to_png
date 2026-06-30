@@ -34,7 +34,7 @@ def test_main_ms_level_0_maps_to_none(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["ms_level"] = ms_level
         return None
 
@@ -52,7 +52,7 @@ def test_main_one_bad_raw_does_not_abort_batch(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         seen.append(raw.name)
         if raw.name == "bad.raw":
             raise RuntimeError("boom")
@@ -71,6 +71,7 @@ def test_parser_defaults():
     assert args.top_peaks == 5
     assert args.label_spacing == -0.01  # negative: stagger off, slant separates
     assert args.label_rotation == -60
+    assert args.mz_decimals == 4
     # New annotation toggles default off, leaving the existing plot unchanged.
     assert args.show_mz is False
     assert args.show_charge is False
@@ -83,7 +84,7 @@ def test_main_show_mz_and_charge_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["show_mz"] = show_mz
         captured["show_charge"] = show_charge
         return None
@@ -102,7 +103,7 @@ def test_main_hide_intensity_inverts_to_show_intensity(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["show_intensity"] = show_intensity
         return None
 
@@ -118,7 +119,7 @@ def test_main_top_peaks_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["n_peak_labels"] = n_peak_labels
         return None
 
@@ -133,13 +134,28 @@ def test_main_label_rotation_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["label_rotation"] = label_rotation
         return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--label-rotation", "0"])
     assert captured["label_rotation"] == 0
+
+
+def test_main_decimals_passed_through(tmp_path, monkeypatch):
+    (tmp_path / "x.raw").touch()
+    captured = {}
+
+    def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
+                    show_mz=False, show_charge=False, show_intensity=True,
+                    label_rotation=-60, mz_decimals=4):
+        captured["mz_decimals"] = mz_decimals
+        return None
+
+    monkeypatch.setattr(cli, "render_png", fake_render)
+    main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--decimals", "2"])
+    assert captured["mz_decimals"] == 2
 
 
 def test_peak_labels_alias_still_accepted():
@@ -154,7 +170,7 @@ def test_main_label_spacing_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True,
-                    label_rotation=-60):
+                    label_rotation=-60, mz_decimals=4):
         captured["label_spacing"] = label_spacing
         return None
 

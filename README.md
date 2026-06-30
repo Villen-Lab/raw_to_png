@@ -46,8 +46,8 @@ raw-to-png --in . --out .\out --ms-level 0 --dpi 300
 # Also print each labelled peak's base-peak m/z and (best-effort) charge
 raw-to-png --in . --out .\out --show-mz --show-charge
 
-# Label the top 5 peaks with m/z only (no intensity text)
-raw-to-png --in . --out .\out --top-peaks 5 --show-mz --hide-intensity
+# Label the top 5 peaks with m/z only (no intensity text), 2 decimal places
+raw-to-png --in . --out .\out --top-peaks 5 --show-mz --hide-intensity --decimals 2
 ```
 
 | Flag | Default | Meaning |
@@ -60,12 +60,13 @@ raw-to-png --in . --out .\out --top-peaks 5 --show-mz --hide-intensity
 | `--label-spacing` | `-0.01` | How close (fraction of RT span) two labels may be before the later one staggers onto a higher row. Negative (the default) keeps every label on the baseline row — the slant separates them; raise it (e.g. `0.05`) to stack crowded labels vertically. |
 | `--label-rotation` | `-60` | Angle (degrees, counter-clockwise) the peak labels are slanted. Use `0` for upright labels. |
 | `--show-mz` | off | Add each marked scan's **base-peak m/z** to its label (in a slightly smaller font). |
+| `--decimals` | `4` | Decimal places shown for m/z values. Only affects `--show-mz`. |
 | `--show-charge` | off | Add each marked scan's **base-peak charge** to its label (best-effort). |
 | `--hide-intensity` | off | Drop the intensity line from peak labels, leaving only m/z / charge. |
 
 The N most abundant, well-separated peaks in each panel are marked with a dot and labelled, each label slanted (by default −60°) so it rises off its peak and neighbouring labels sit side by side. "Well-separated" means peaks must be at least 1 % of the retention-time span apart, so several scans straddling one apex aren't all labelled as separate peaks. Each panel's maximum is also shown in a large label in the top-left corner. The slant usually keeps crowded labels legible on its own; if labels still collide you can raise `--label-spacing` to stagger them vertically as well, or reduce `--top-peaks`.
 
-Each peak label is built from independently selectable fields. By default it shows the intensity; `--show-mz` and `--show-charge` add the scan's base-peak m/z and charge as extra lines (the m/z line is a couple of points smaller, as secondary detail), and `--hide-intensity` drops the intensity line so you can label peaks with m/z and/or charge **alone** (e.g. `--top-peaks 5 --show-mz --hide-intensity`). The number of peaks marked is always `--top-peaks` (use `0` to mark none); the show/hide flags only choose what text rides on each. The m/z and charge are those of the scan's **base peak** (its single tallest ion); for the TIC panel — whose value is a sum over all ions with no single m/z — they describe that same scan's base peak. `--show-charge` is **lower-confidence**: charge state is not a stored scan statistic, so it is read from the scan's centroid stream, and Thermo frequently leaves it unassigned for MS1 / profile data. Where no charge is assigned the label reads `z=?`. `--show-charge` also costs one extra read per scan.
+Each peak label is built from independently selectable fields. By default it shows the intensity; `--show-mz` and `--show-charge` add the scan's base-peak m/z and charge as extra lines (the m/z line is a couple of points smaller, as secondary detail, and `--decimals` sets its precision), and `--hide-intensity` drops the intensity line so you can label peaks with m/z and/or charge **alone** (e.g. `--top-peaks 5 --show-mz --hide-intensity`). The number of peaks marked is always `--top-peaks` (use `0` to mark none); the show/hide flags only choose what text rides on each. The m/z and charge are those of the scan's **base peak** (its single tallest ion); for the TIC panel — whose value is a sum over all ions with no single m/z — they describe that same scan's base peak. `--show-charge` is **lower-confidence**: charge state is not a stored scan statistic, so it is read from the scan's centroid stream, and Thermo frequently leaves it unassigned for MS1 / profile data. Where no charge is assigned the label reads `z=?`. `--show-charge` also costs one extra read per scan.
 
 The top-left panel-max label ("Max TIC" / "Max base peak") is independent of these flags and always shows the panel's maximum intensity.
 

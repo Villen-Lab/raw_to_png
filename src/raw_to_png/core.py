@@ -47,6 +47,10 @@ DEFAULT_LABEL_ROTATION = -60
 PEAK_LABEL_FONTSIZE = 8
 MZ_LABEL_FONTSIZE = 6
 
+# Decimal places shown for the m/z label (the only multi-decimal field; intensity
+# is scientific notation, charge an integer). High-res Thermo data warrants 4.
+DEFAULT_MZ_DECIMALS = 4
+
 
 def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
     """Return indices of the ``n`` most abundant, well-separated peaks.
@@ -80,7 +84,8 @@ def _sci_label(v):
 
 
 def _peak_label_lines(intensity, mz=None, charge=None,
-                      show_intensity=True, show_mz=False, show_charge=False):
+                      show_intensity=True, show_mz=False, show_charge=False,
+                      mz_decimals=DEFAULT_MZ_DECIMALS):
     """Build a peak's label as a list of ``(text, fontsize)`` lines.
 
     Each of intensity / ``m/z`` / charge is its own opt-in line, so a label can
@@ -88,18 +93,20 @@ def _peak_label_lines(intensity, mz=None, charge=None,
     ``show_intensity=False``). Each line carries its own font size — the m/z line
     is smaller (``MZ_LABEL_FONTSIZE``) than the intensity / charge lines — which is
     why the lines are drawn as separate annotations rather than one ``\\n``-joined
-    string (a single matplotlib Text can't mix sizes). ``mz``/``charge`` that are
-    missing or unassigned (``None``/non-finite) render as ``?`` rather than being
-    dropped, so an opted-in column stays visually aligned across peaks. For the TIC
-    panel the supplied ``mz``/``charge`` are the scan's *base peak* (its tallest
-    ion), since a TIC value itself has no single m/z. Empty when nothing selected.
+    string (a single matplotlib Text can't mix sizes). ``mz_decimals`` sets the m/z
+    decimal places. ``mz``/``charge`` that are missing or unassigned
+    (``None``/non-finite) render as ``?`` rather than being dropped, so an opted-in
+    column stays visually aligned across peaks. For the TIC panel the supplied
+    ``mz``/``charge`` are the scan's *base peak* (its tallest ion), since a TIC
+    value itself has no single m/z. Empty when nothing selected.
     """
     lines = []
     if show_intensity:
         lines.append((_sci_label(intensity), PEAK_LABEL_FONTSIZE))
     if show_mz:
         ok = mz is not None and np.isfinite(mz) and mz > 0
-        lines.append((rf"$m/z$ {mz:.4f}" if ok else r"$m/z$ ?", MZ_LABEL_FONTSIZE))
+        text = rf"$m/z$ {mz:.{mz_decimals}f}" if ok else r"$m/z$ ?"
+        lines.append((text, MZ_LABEL_FONTSIZE))
     if show_charge:
         ok = charge is not None and np.isfinite(charge) and charge > 0
         lines.append((f"z={int(charge)}" if ok else "z=?", PEAK_LABEL_FONTSIZE))
@@ -107,14 +114,15 @@ def _peak_label_lines(intensity, mz=None, charge=None,
 
 
 def _peak_label(intensity, mz=None, charge=None,
-                show_intensity=True, show_mz=False, show_charge=False):
+                show_intensity=True, show_mz=False, show_charge=False,
+                mz_decimals=DEFAULT_MZ_DECIMALS):
     """The ``\\n``-joined text of a peak label (font sizes dropped).
 
     A convenience over ``_peak_label_lines`` for callers that only need the text.
     """
     return "\n".join(text for text, _ in _peak_label_lines(
-        intensity, mz=mz, charge=charge,
-        show_intensity=show_intensity, show_mz=show_mz, show_charge=show_charge))
+        intensity, mz=mz, charge=charge, show_intensity=show_intensity,
+        show_mz=show_mz, show_charge=show_charge, mz_decimals=mz_decimals))
 
 
 def _stagger_levels(rt, idx, x_thresh_frac=DEFAULT_LABEL_SPACING):
@@ -141,7 +149,8 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
                         label_spacing=DEFAULT_LABEL_SPACING,
                         mz=None, charge=None,
                         show_intensity=True, show_mz=False, show_charge=False,
-                        rotation=DEFAULT_LABEL_ROTATION):
+                        rotation=DEFAULT_LABEL_ROTATION,
+                        mz_decimals=DEFAULT_MZ_DECIMALS):
     """Mark the n most abundant peaks and label each with the selected fields.
 
     A peak's label is built from any combination of intensity / m/z / charge (see
@@ -190,6 +199,7 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
             mz=mz[i] if mz is not None else None,
             charge=charge[i] if charge is not None else None,
             show_intensity=show_intensity, show_mz=show_mz, show_charge=show_charge,
+            mz_decimals=mz_decimals,
         )
         if not lines:  # nothing selected: leave just the dot
             continue
@@ -334,7 +344,8 @@ def get_chromatograms(raw_path, ms_level=1, want_charge=False):
 
 def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS,
                label_spacing=DEFAULT_LABEL_SPACING, show_mz=False, show_charge=False,
-               show_intensity=True, label_rotation=DEFAULT_LABEL_ROTATION):
+               show_intensity=True, label_rotation=DEFAULT_LABEL_ROTATION,
+               mz_decimals=DEFAULT_MZ_DECIMALS):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
 
     The ``n_peak_labels`` most abundant peaks in each panel are marked; ``0``
@@ -349,6 +360,7 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
     charge, best-effort — ``z=?`` where the .RAW assigns none). Turn ``show_intensity``
     off to label the peaks with m/z and/or charge alone. For the TIC panel the m/z
     and charge refer to that scan's tallest ion, since a TIC value has no single m/z.
+    ``mz_decimals`` sets how many decimal places the m/z is shown to.
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
@@ -385,11 +397,13 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
     _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels,
                         label_spacing=label_spacing, mz=bpm, charge=charge,
                         show_intensity=show_intensity, show_mz=show_mz,
-                        show_charge=show_charge, rotation=label_rotation)
+                        show_charge=show_charge, rotation=label_rotation,
+                        mz_decimals=mz_decimals)
     _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels,
                         label_spacing=label_spacing, mz=bpm, charge=charge,
                         show_intensity=show_intensity, show_mz=show_mz,
-                        show_charge=show_charge, rotation=label_rotation)
+                        show_charge=show_charge, rotation=label_rotation,
+                        mz_decimals=mz_decimals)
     # ...and the panel maximum, large, in the top-left corner.
     _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
     _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")

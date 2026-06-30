@@ -177,6 +177,16 @@ def test_peak_label_lines_mz_font_is_smaller():
     assert mz_fs < intensity_fs
 
 
+def test_peak_label_mz_decimals():
+    """mz_decimals controls the m/z precision; default stays at 4."""
+    assert "524.2671" in core._peak_label(3.8e10, mz=524.26713, show_mz=True)
+    assert "524.27" in core._peak_label(
+        3.8e10, mz=524.26713, show_mz=True, mz_decimals=2)
+    # No more decimals than requested (2 dp -> not the 4-dp rendering).
+    assert "524.2671" not in core._peak_label(
+        3.8e10, mz=524.26713, show_mz=True, mz_decimals=2)
+
+
 def test_peak_label_mz_only_without_intensity():
     """show_intensity=False drops the intensity line, leaving m/z alone."""
     label = core._peak_label(3.8e10, mz=524.2671, show_intensity=False, show_mz=True)
