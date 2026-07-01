@@ -9,6 +9,7 @@ from raw_to_png.core import (
     DEFAULT_LABEL_SPACING,
     DEFAULT_MZ_DECIMALS,
     DEFAULT_PEAK_LABELS,
+    DEFAULT_RT_DECIMALS,
     render_png,
 )
 
@@ -64,11 +65,19 @@ def build_parser():
                    default=DEFAULT_MZ_DECIMALS, metavar="N",
                    help="Decimal places shown for m/z values "
                         f"(default {DEFAULT_MZ_DECIMALS}). Only affects --show-mz.")
+    p.add_argument("--rt-decimals", dest="rt_decimals", type=int,
+                   default=DEFAULT_RT_DECIMALS, metavar="N",
+                   help="Decimal places shown for the peak retention-time label "
+                        f"(default {DEFAULT_RT_DECIMALS}). Only affects the "
+                        "retention-time line (on unless --hide-rt is given).")
     p.add_argument("--hide-intensity", action="store_true",
                    help="Drop the intensity line from peak labels, leaving only "
                         "--show-mz / --show-charge. Use e.g. --top-peaks 5 "
                         "--show-mz --hide-intensity to label N peaks with m/z "
                         "alone. (The top-left panel-max label is unaffected.)")
+    p.add_argument("--hide-rt", action="store_true",
+                   help="Drop the retention-time (minutes) line from peak labels. "
+                        "Retention time is labelled by default alongside intensity.")
     return p
 
 
@@ -95,8 +104,10 @@ def main(argv=None):
                        label_spacing=args.label_spacing,
                        show_mz=args.show_mz, show_charge=args.show_charge,
                        show_intensity=not args.hide_intensity,
+                       show_rt=not args.hide_rt,
                        label_rotation=args.label_rotation,
-                       mz_decimals=args.mz_decimals)
+                       mz_decimals=args.mz_decimals,
+                       rt_decimals=args.rt_decimals)
         except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
             print(f"  ! failed on {raw.name}: {e}")
 

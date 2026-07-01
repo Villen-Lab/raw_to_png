@@ -47,9 +47,23 @@ DEFAULT_LABEL_ROTATION = -60
 PEAK_LABEL_FONTSIZE = 8
 MZ_LABEL_FONTSIZE = 6
 
+# Perpendicular gap (points) between a label's stacked lines. Kept small so the
+# compact-font lines (retention time, m/z) read as one tight block rather than
+# drifting apart; the intensity line is only 8 pt so this still clears it.
+LABEL_LINE_GAP = 7
+
+# Horizontal nudge (points) applied to every peak label so the slanted block sits
+# more centred over its peak — a touch to the right — instead of leaning fully to
+# its left. Raise it to shift labels further right, lower (or negative) to shift
+# them back over/left of the peak.
+LABEL_DX = 8
+
 # Decimal places shown for the m/z label (the only multi-decimal field; intensity
 # is scientific notation, charge an integer). High-res Thermo data warrants 4.
 DEFAULT_MZ_DECIMALS = 4
+
+# Decimal places shown for the retention-time label (minutes).
+DEFAULT_RT_DECIMALS = 2
 
 
 def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
@@ -83,26 +97,35 @@ def _sci_label(v):
     return rf"${mant:.2f}\times10^{{{exp}}}$"
 
 
-def _peak_label_lines(intensity, mz=None, charge=None,
-                      show_intensity=True, show_mz=False, show_charge=False,
-                      mz_decimals=DEFAULT_MZ_DECIMALS):
+def _peak_label_lines(intensity, mz=None, charge=None, rt=None,
+                      show_intensity=True, show_mz=False, show_charge=False, show_rt=True,
+                      mz_decimals=DEFAULT_MZ_DECIMALS, rt_decimals=DEFAULT_RT_DECIMALS):
     """Build a peak's label as a list of ``(text, fontsize)`` lines.
 
-    Each of intensity / ``m/z`` / charge is its own opt-in line, so a label can
-    carry any combination (e.g. m/z only, with the intensity line suppressed via
-    ``show_intensity=False``). Each line carries its own font size — the m/z line
-    is smaller (``MZ_LABEL_FONTSIZE``) than the intensity / charge lines — which is
-    why the lines are drawn as separate annotations rather than one ``\\n``-joined
-    string (a single matplotlib Text can't mix sizes). ``mz_decimals`` sets the m/z
-    decimal places. ``mz``/``charge`` that are missing or unassigned
-    (``None``/non-finite) render as ``?`` rather than being dropped, so an opted-in
-    column stays visually aligned across peaks. For the TIC panel the supplied
-    ``mz``/``charge`` are the scan's *base peak* (its tallest ion), since a TIC
-    value itself has no single m/z. Empty when nothing selected.
+    Each of intensity / retention time / ``m/z`` / charge is its own opt-in line,
+    so a label can carry any combination (e.g. m/z only, with the intensity line
+    suppressed via ``show_intensity=False``). Retention time, like intensity, is
+    on by default — it is the peak's own position and is always known, unlike
+    m/z / charge which are opt-in extras. Each line carries its own font size —
+    the m/z and retention-time lines are smaller (``MZ_LABEL_FONTSIZE``) than the
+    intensity / charge lines — which is why the lines are drawn as separate
+    annotations rather than one ``\\n``-joined string (a single matplotlib Text
+    can't mix sizes). ``mz_decimals``/``rt_decimals`` set the m/z and
+    retention-time decimal places. The retention-time line is the bare value in
+    minutes (no ``RT``/``min`` text). ``mz``/``charge``/``rt`` that are missing or
+    unassigned (``None``/non-finite) render as ``?`` rather than being dropped, so
+    an opted-in column stays visually aligned across peaks. For
+    the TIC panel the supplied ``mz``/``charge`` are the scan's *base peak* (its
+    tallest ion), since a TIC value itself has no single m/z. Empty when nothing
+    selected.
     """
     lines = []
     if show_intensity:
         lines.append((_sci_label(intensity), PEAK_LABEL_FONTSIZE))
+    if show_rt:
+        ok = rt is not None and np.isfinite(rt)
+        text = f"{rt:.{rt_decimals}f}" if ok else "?"
+        lines.append((text, MZ_LABEL_FONTSIZE))
     if show_mz:
         ok = mz is not None and np.isfinite(mz) and mz > 0
         text = rf"$m/z$ {mz:.{mz_decimals}f}" if ok else r"$m/z$ ?"
@@ -113,16 +136,17 @@ def _peak_label_lines(intensity, mz=None, charge=None,
     return lines
 
 
-def _peak_label(intensity, mz=None, charge=None,
-                show_intensity=True, show_mz=False, show_charge=False,
-                mz_decimals=DEFAULT_MZ_DECIMALS):
+def _peak_label(intensity, mz=None, charge=None, rt=None,
+                show_intensity=True, show_mz=False, show_charge=False, show_rt=True,
+                mz_decimals=DEFAULT_MZ_DECIMALS, rt_decimals=DEFAULT_RT_DECIMALS):
     """The ``\\n``-joined text of a peak label (font sizes dropped).
 
     A convenience over ``_peak_label_lines`` for callers that only need the text.
     """
     return "\n".join(text for text, _ in _peak_label_lines(
-        intensity, mz=mz, charge=charge, show_intensity=show_intensity,
-        show_mz=show_mz, show_charge=show_charge, mz_decimals=mz_decimals))
+        intensity, mz=mz, charge=charge, rt=rt, show_intensity=show_intensity,
+        show_mz=show_mz, show_charge=show_charge, show_rt=show_rt,
+        mz_decimals=mz_decimals, rt_decimals=rt_decimals))
 
 
 def _stagger_levels(rt, idx, x_thresh_frac=DEFAULT_LABEL_SPACING):
@@ -149,21 +173,24 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
                         label_spacing=DEFAULT_LABEL_SPACING,
                         mz=None, charge=None,
                         show_intensity=True, show_mz=False, show_charge=False,
+                        show_rt=True,
                         rotation=DEFAULT_LABEL_ROTATION,
-                        mz_decimals=DEFAULT_MZ_DECIMALS):
+                        mz_decimals=DEFAULT_MZ_DECIMALS,
+                        rt_decimals=DEFAULT_RT_DECIMALS):
     """Mark the n most abundant peaks and label each with the selected fields.
 
-    A peak's label is built from any combination of intensity / m/z / charge (see
-    ``_peak_label_lines``); with all three off the peaks are still dotted but
-    unlabelled. Labels are anchored at their peak (so the dot identifies which peak
-    each belongs to) and slanted by ``rotation`` degrees so neighbours sit side by
-    side. ``label_spacing`` still drives the vertical stagger, but the default is
-    negative (off) because the slant already separates crowded labels; raise it to
-    re-enable stacking.
+    A peak's label is built from any combination of intensity / retention time /
+    m/z / charge (see ``_peak_label_lines``); with all four off the peaks are
+    still dotted but unlabelled. Labels are anchored at their peak (so the dot
+    identifies which peak each belongs to) and slanted by ``rotation`` degrees so
+    neighbours sit side by side. ``label_spacing`` still drives the vertical
+    stagger, but the default is negative (off) because the slant already
+    separates crowded labels; raise it to re-enable stacking.
 
     Each label's lines are drawn as separate annotations (so the m/z line can use a
     smaller font); they are offset along the rotation-perpendicular so they read as
-    one slanted block. ``mz``/``charge`` are arrays parallel to ``rt``.
+    one slanted block. ``mz``/``charge`` are arrays parallel to ``rt``; the peak's
+    own retention time (in ``rt``) is used directly for the ``show_rt`` line.
     """
     if n <= 0 or y.size == 0:
         return
@@ -172,7 +199,7 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
 
     levels = _stagger_levels(rt, idx, x_thresh_frac=label_spacing)
 
-    n_lines = int(show_intensity) + int(show_mz) + int(show_charge)
+    n_lines = int(show_intensity) + int(show_rt) + int(show_mz) + int(show_charge)
     row_pt = 13 * n_lines  # one stacked label's height ~ one row per text line
     # Each label starts at its own peak's tip and rises clear of the trace. The
     # text is anchored at the apex with its bottom there (va="bottom"); the
@@ -186,14 +213,16 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
     step = (-math.sin(theta), math.cos(theta))
     sin_t = math.sin(theta)
     ha = "left" if sin_t > 1e-9 else "right" if sin_t < -1e-9 else "center"
-    line_gap = 11  # points between stacked lines
+    line_gap = LABEL_LINE_GAP  # perpendicular gap between a label's stacked lines
     for pos, (i, level) in enumerate(zip(idx, levels)):
         lines = _peak_label_lines(
             y[i],
             mz=mz[i] if mz is not None else None,
             charge=charge[i] if charge is not None else None,
+            rt=rt[i],
             show_intensity=show_intensity, show_mz=show_mz, show_charge=show_charge,
-            mz_decimals=mz_decimals,
+            show_rt=show_rt,
+            mz_decimals=mz_decimals, rt_decimals=rt_decimals,
         )
         if not lines:  # nothing selected: leave just the dot
             continue
@@ -202,7 +231,8 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
             ax.annotate(
                 text,
                 xy=(rt[i], float(y[i])),  # anchor at this peak's own tip
-                xytext=(step[0] * line_gap * li, base_dy + step[1] * line_gap * li),
+                xytext=(LABEL_DX + step[0] * line_gap * li,
+                        base_dy + step[1] * line_gap * li),
                 textcoords="offset points",
                 ha=ha,
                 va="bottom",
@@ -341,8 +371,8 @@ def get_chromatograms(raw_path, ms_level=1, want_charge=False):
 
 def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS,
                label_spacing=DEFAULT_LABEL_SPACING, show_mz=False, show_charge=False,
-               show_intensity=True, label_rotation=DEFAULT_LABEL_ROTATION,
-               mz_decimals=DEFAULT_MZ_DECIMALS):
+               show_intensity=True, show_rt=True, label_rotation=DEFAULT_LABEL_ROTATION,
+               mz_decimals=DEFAULT_MZ_DECIMALS, rt_decimals=DEFAULT_RT_DECIMALS):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
 
     The ``n_peak_labels`` most abundant peaks in each panel are marked; ``0``
@@ -353,11 +383,13 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
 
     Each marked peak's label is composed of independently selectable fields:
     ``show_intensity`` (the intensity in scientific notation, on by default),
+    ``show_rt`` (the peak's own retention time in minutes, on by default),
     ``show_mz`` (the scan's base-peak m/z), and ``show_charge`` (the base-peak
     charge, best-effort — ``z=?`` where the .RAW assigns none). Turn ``show_intensity``
-    off to label the peaks with m/z and/or charge alone. For the TIC panel the m/z
-    and charge refer to that scan's tallest ion, since a TIC value has no single m/z.
-    ``mz_decimals`` sets how many decimal places the m/z is shown to.
+    and/or ``show_rt`` off to label the peaks with m/z and/or charge alone. For the
+    TIC panel the m/z and charge refer to that scan's tallest ion, since a TIC value
+    has no single m/z. ``mz_decimals``/``rt_decimals`` set how many decimal places
+    the m/z and retention time are shown to.
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
@@ -394,13 +426,15 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
     _annotate_top_peaks(ax_tic, rt, tic, TIC_COLOR, n=n_peak_labels,
                         label_spacing=label_spacing, mz=bpm, charge=charge,
                         show_intensity=show_intensity, show_mz=show_mz,
-                        show_charge=show_charge, rotation=label_rotation,
-                        mz_decimals=mz_decimals)
+                        show_charge=show_charge, show_rt=show_rt,
+                        rotation=label_rotation,
+                        mz_decimals=mz_decimals, rt_decimals=rt_decimals)
     _annotate_top_peaks(ax_bpc, rt, bpc, BPC_COLOR, n=n_peak_labels,
                         label_spacing=label_spacing, mz=bpm, charge=charge,
                         show_intensity=show_intensity, show_mz=show_mz,
-                        show_charge=show_charge, rotation=label_rotation,
-                        mz_decimals=mz_decimals)
+                        show_charge=show_charge, show_rt=show_rt,
+                        rotation=label_rotation,
+                        mz_decimals=mz_decimals, rt_decimals=rt_decimals)
     # ...and the panel maximum, large, in the top-left corner.
     _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
     _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")

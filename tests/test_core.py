@@ -153,15 +153,51 @@ def test_render_png_skips_when_empty(tmp_path, monkeypatch):
 
 
 def test_peak_label_intensity_only():
-    """Default: just the scientific-notation intensity, single line."""
-    label = core._peak_label(3.8e10)
+    """show_rt=False isolates the scientific-notation intensity, single line."""
+    label = core._peak_label(3.8e10, show_rt=False)
     assert "\n" not in label
     assert "times10" in label  # mathtext scientific notation
 
 
+def test_peak_label_default_includes_rt():
+    """Retention time labels alongside intensity by default (2 lines, bare value)."""
+    label = core._peak_label(3.8e10, rt=12.3)
+    lines = label.split("\n")
+    assert len(lines) == 2
+    assert "times10" in lines[0]
+    assert lines[1] == "12.30"  # bare minutes, no "RT"/"min" text
+
+
+def test_peak_label_rt_only():
+    label = core._peak_label(3.8e10, rt=12.3, show_intensity=False)
+    assert "\n" not in label
+    assert label == "12.30"
+
+
+def test_peak_label_rt_unassigned_renders_question_mark():
+    """Missing rt (None, the default) renders as '?', consistent with mz/charge."""
+    label = core._peak_label(3.8e10, show_intensity=False)
+    assert label == "?"
+
+
+def test_peak_label_rt_decimals():
+    """rt_decimals controls the retention-time precision; default stays at 2."""
+    assert core._peak_label(3.8e10, rt=12.3456, show_intensity=False) == "12.35"
+    assert core._peak_label(
+        3.8e10, rt=12.3456, show_intensity=False, rt_decimals=0) == "12"
+
+
+def test_peak_label_lines_rt_font_matches_mz():
+    """The retention-time line uses the smaller m/z font size, not the intensity one."""
+    (_, intensity_fs), (_, rt_fs) = core._peak_label_lines(3.8e10, rt=12.3)
+    assert rt_fs == core.MZ_LABEL_FONTSIZE
+    assert intensity_fs == core.PEAK_LABEL_FONTSIZE
+    assert rt_fs < intensity_fs
+
+
 def test_peak_label_with_mz_and_charge():
     label = core._peak_label(3.8e10, mz=524.2671, charge=2.0,
-                             show_mz=True, show_charge=True)
+                             show_mz=True, show_charge=True, show_rt=False)
     lines = label.split("\n")
     assert len(lines) == 3
     assert "524.2671" in lines[1]
@@ -171,7 +207,7 @@ def test_peak_label_with_mz_and_charge():
 def test_peak_label_lines_mz_font_is_smaller():
     """The m/z line carries a smaller font than the intensity / charge lines."""
     (_, intensity_fs), (_, mz_fs), (_, charge_fs) = core._peak_label_lines(
-        3.8e10, mz=524.2671, charge=2.0, show_mz=True, show_charge=True)
+        3.8e10, mz=524.2671, charge=2.0, show_mz=True, show_charge=True, show_rt=False)
     assert mz_fs == core.MZ_LABEL_FONTSIZE
     assert intensity_fs == charge_fs == core.PEAK_LABEL_FONTSIZE
     assert mz_fs < intensity_fs
@@ -188,8 +224,9 @@ def test_peak_label_mz_decimals():
 
 
 def test_peak_label_mz_only_without_intensity():
-    """show_intensity=False drops the intensity line, leaving m/z alone."""
-    label = core._peak_label(3.8e10, mz=524.2671, show_intensity=False, show_mz=True)
+    """show_intensity=False and show_rt=False drop everything but m/z."""
+    label = core._peak_label(3.8e10, mz=524.2671, show_intensity=False, show_mz=True,
+                             show_rt=False)
     assert "\n" not in label
     assert "times10" not in label  # no intensity line
     assert "524.2671" in label
@@ -197,13 +234,13 @@ def test_peak_label_mz_only_without_intensity():
 
 def test_peak_label_nothing_selected_is_empty():
     """All fields off -> empty string, so the caller draws just the dot."""
-    assert core._peak_label(3.8e10, show_intensity=False) == ""
+    assert core._peak_label(3.8e10, show_intensity=False, show_rt=False) == ""
 
 
 def test_peak_label_unassigned_renders_question_mark():
     """Opted-in but missing values stay as aligned '?' rows, not dropped lines."""
     label = core._peak_label(3.8e10, mz=np.nan, charge=np.nan,
-                             show_mz=True, show_charge=True)
+                             show_mz=True, show_charge=True, show_rt=False)
     lines = label.split("\n")
     assert len(lines) == 3
     assert lines[1].endswith("?")
