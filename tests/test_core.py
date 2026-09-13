@@ -2,10 +2,9 @@
 
 import numpy as np
 
+from conftest import FakeReader
 from raw_to_png import core
 from raw_to_png.core import extract_chromatograms, render_png, top_peaks
-
-from conftest import FakeReader
 
 
 def test_extract_ms1_only(mixed_scans):

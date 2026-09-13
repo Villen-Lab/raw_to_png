@@ -15,11 +15,11 @@ only runs on Windows / .NET):
 import math
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")  # headless: no display needed
-import matplotlib.pyplot as plt  # noqa: E402  (must follow matplotlib.use)
+import matplotlib.pyplot as plt
 
 # Plot colours, matched to the original prototype.
 TIC_COLOR = "#1f4e79"  # dark blue
@@ -268,7 +268,7 @@ def _annotate_max(ax, y, color, label, corner=DEFAULT_MAX_LABEL_CORNER):
         x, 0.95, f"{label}: {_sci_label(float(y.max()))}",
         transform=ax.transAxes, ha=corner, va="top",
         fontsize=13, fontweight="bold", color=color,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.85),
+        bbox={"boxstyle": "round,pad=0.3", "fc": "white", "ec": color, "alpha": 0.85},
     )
 
 
@@ -285,7 +285,7 @@ def _base_peak_charge(reader, scan_no):
     """
     try:
         stream = reader.get_centroid_stream(scan_no, False)
-    except Exception:
+    except Exception:  # noqa: BLE001  (best-effort: one bad scan must not abort the run)
         return np.nan
     intensities = getattr(stream, "intensities", None)
     charges = getattr(stream, "charges", None)
@@ -365,8 +365,8 @@ def get_chromatograms(raw_path, ms_level=1, want_charge=False):
     """
     # Imported lazily: fisher_py pulls in .NET assemblies that are unavailable
     # on platforms used only to import this module (e.g. CI).
-    from fisher_py.raw_file_reader import RawFileReaderAdapter
     from fisher_py.data import Device
+    from fisher_py.raw_file_reader import RawFileReaderAdapter
 
     reader = RawFileReaderAdapter.file_factory(str(raw_path))
     try:

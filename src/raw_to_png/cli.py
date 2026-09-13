@@ -132,7 +132,7 @@ def main(argv=None):
                        rt_decimals=args.rt_decimals,
                        max_label_corner=args.max_label_corner,
                        tic_ymax=args.tic_ymax, bpc_ymax=args.bpc_ymax)
-        except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
+        except Exception as e:  # noqa: BLE001  (fail-soft: one bad .RAW must not abort the batch)
             print(f"  ! failed on {raw.name}: {e}")
 
     print("Done.")
