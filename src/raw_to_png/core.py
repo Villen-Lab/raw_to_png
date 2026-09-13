@@ -15,11 +15,11 @@ only runs on Windows / .NET):
 import math
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")  # headless: no display needed
-import matplotlib.pyplot as plt  # noqa: E402  (must follow matplotlib.use)
+import matplotlib.pyplot as plt
 
 # Plot colours, matched to the original prototype.
 TIC_COLOR = "#1f4e79"  # dark blue
@@ -64,6 +64,10 @@ DEFAULT_MZ_DECIMALS = 4
 
 # Decimal places shown for the retention-time label (minutes).
 DEFAULT_RT_DECIMALS = 2
+
+# Which top corner ("left" or "right") of each panel holds the large panel-max label.
+MAX_LABEL_CORNERS = ("left", "right")
+DEFAULT_MAX_LABEL_CORNER = "left"
 
 
 def top_peaks(rt, y, n=DEFAULT_PEAK_LABELS, min_sep_frac=PEAK_MIN_SEP_FRAC):
@@ -253,15 +257,18 @@ def _annotate_top_peaks(ax, rt, y, color, n=DEFAULT_PEAK_LABELS,
     ax.set_ylim(top=float(y.max()) * headroom)
 
 
-def _annotate_max(ax, y, color, label):
-    """Write the max intensity in a large bold label in the panel's top-left."""
+def _annotate_max(ax, y, color, label, corner=DEFAULT_MAX_LABEL_CORNER):
+    """Write the max intensity in a large bold label in the panel's top ``corner``."""
+    if corner not in MAX_LABEL_CORNERS:
+        raise ValueError(f"corner must be one of {MAX_LABEL_CORNERS}, got {corner!r}")
     if y.size == 0:
         return
+    x = 0.012 if corner == "left" else 0.988
     ax.text(
-        0.012, 0.95, f"{label}: {_sci_label(float(y.max()))}",
-        transform=ax.transAxes, ha="left", va="top",
+        x, 0.95, f"{label}: {_sci_label(float(y.max()))}",
+        transform=ax.transAxes, ha=corner, va="top",
         fontsize=13, fontweight="bold", color=color,
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.85),
+        bbox={"boxstyle": "round,pad=0.3", "fc": "white", "ec": color, "alpha": 0.85},
     )
 
 
@@ -278,7 +285,7 @@ def _base_peak_charge(reader, scan_no):
     """
     try:
         stream = reader.get_centroid_stream(scan_no, False)
-    except Exception:
+    except Exception:  # noqa: BLE001  (best-effort: one bad scan must not abort the run)
         return np.nan
     intensities = getattr(stream, "intensities", None)
     charges = getattr(stream, "charges", None)
@@ -358,8 +365,8 @@ def get_chromatograms(raw_path, ms_level=1, want_charge=False):
     """
     # Imported lazily: fisher_py pulls in .NET assemblies that are unavailable
     # on platforms used only to import this module (e.g. CI).
-    from fisher_py.raw_file_reader import RawFileReaderAdapter
     from fisher_py.data import Device
+    from fisher_py.raw_file_reader import RawFileReaderAdapter
 
     reader = RawFileReaderAdapter.file_factory(str(raw_path))
     try:
@@ -372,7 +379,8 @@ def get_chromatograms(raw_path, ms_level=1, want_charge=False):
 def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEAK_LABELS,
                label_spacing=DEFAULT_LABEL_SPACING, show_mz=False, show_charge=False,
                show_intensity=True, show_rt=True, label_rotation=DEFAULT_LABEL_ROTATION,
-               mz_decimals=DEFAULT_MZ_DECIMALS, rt_decimals=DEFAULT_RT_DECIMALS):
+               mz_decimals=DEFAULT_MZ_DECIMALS, rt_decimals=DEFAULT_RT_DECIMALS,
+               max_label_corner=DEFAULT_MAX_LABEL_CORNER, tic_ymax=None, bpc_ymax=None):
     """Render a 2-panel (TIC / base peak) PNG for one .RAW file.
 
     The ``n_peak_labels`` most abundant peaks in each panel are marked; ``0``
@@ -389,10 +397,18 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
     and/or ``show_rt`` off to label the peaks with m/z and/or charge alone. For the
     TIC panel the m/z and charge refer to that scan's tallest ion, since a TIC value
     has no single m/z. ``mz_decimals``/``rt_decimals`` set how many decimal places
-    the m/z and retention time are shown to.
+    the m/z and retention time are shown to. ``max_label_corner`` ("left" or
+    "right") picks which top corner holds each panel's large max-intensity label.
+    ``tic_ymax``/``bpc_ymax`` fix the top of the TIC / base-peak y-axis (e.g. 3e10)
+    so runs share a scale; ``None`` (default) autoscales with label headroom.
+    Signal above a fixed limit is clipped at the top of the panel.
 
     Returns the output path, or ``None`` if no scans matched ``ms_level``.
     """
+    for flag, ymax in (("tic_ymax", tic_ymax), ("bpc_ymax", bpc_ymax)):
+        if ymax is not None and not ymax > 0:
+            raise ValueError(f"{flag} must be a positive number, got {ymax!r}")
+
     name = Path(raw_path).stem
     rt, tic, bpc, bpm, charge = get_chromatograms(
         raw_path, ms_level=ms_level, want_charge=show_charge)
@@ -435,9 +451,14 @@ def render_png(raw_path, out_dir, ms_level=1, dpi=200, n_peak_labels=DEFAULT_PEA
                         show_charge=show_charge, show_rt=show_rt,
                         rotation=label_rotation,
                         mz_decimals=mz_decimals, rt_decimals=rt_decimals)
-    # ...and the panel maximum, large, in the top-left corner.
-    _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC")
-    _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak")
+    # ...and the panel maximum, large, in the chosen top corner.
+    _annotate_max(ax_tic, tic, TIC_COLOR, "Max TIC", corner=max_label_corner)
+    _annotate_max(ax_bpc, bpc, BPC_COLOR, "Max base peak", corner=max_label_corner)
+    # A fixed y-axis top overrides the autoscaled headroom set while labelling.
+    if tic_ymax is not None:
+        ax_tic.set_ylim(top=tic_ymax)
+    if bpc_ymax is not None:
+        ax_bpc.set_ylim(top=bpc_ymax)
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)  # gitignored; absent on fresh clone

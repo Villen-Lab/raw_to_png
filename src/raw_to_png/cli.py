@@ -7,9 +7,11 @@ from pathlib import Path
 from raw_to_png.core import (
     DEFAULT_LABEL_ROTATION,
     DEFAULT_LABEL_SPACING,
+    DEFAULT_MAX_LABEL_CORNER,
     DEFAULT_MZ_DECIMALS,
     DEFAULT_PEAK_LABELS,
     DEFAULT_RT_DECIMALS,
+    MAX_LABEL_CORNERS,
     render_png,
 )
 
@@ -74,11 +76,31 @@ def build_parser():
                    help="Drop the intensity line from peak labels, leaving only "
                         "--show-mz / --show-charge. Use e.g. --top-peaks 5 "
                         "--show-mz --hide-intensity to label N peaks with m/z "
-                        "alone. (The top-left panel-max label is unaffected.)")
+                        "alone. (The panel-max label is unaffected.)")
     p.add_argument("--hide-rt", action="store_true",
                    help="Drop the retention-time (minutes) line from peak labels. "
                         "Retention time is labelled by default alongside intensity.")
+    p.add_argument("--max-label-corner", choices=MAX_LABEL_CORNERS,
+                   default=DEFAULT_MAX_LABEL_CORNER,
+                   help="Top corner of each panel for the large 'Max TIC' / 'Max "
+                        f"base peak' label (default {DEFAULT_MAX_LABEL_CORNER}).")
+    p.add_argument("--tic-ymax", type=_positive_float, default=None, metavar="VALUE",
+                   help="Fix the top of the TIC y-axis to VALUE (e.g. 3e10) so runs "
+                        "share a scale. Default: autoscale per file.")
+    p.add_argument("--bpc-ymax", type=_positive_float, default=None, metavar="VALUE",
+                   help="Fix the top of the base-peak y-axis to VALUE (e.g. 5e9). "
+                        "Default: autoscale per file.")
     return p
+
+
+def _positive_float(text):
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not value > 0:
+        raise argparse.ArgumentTypeError(f"must be positive, got {text!r}")
+    return value
 
 
 def main(argv=None):
@@ -107,8 +129,10 @@ def main(argv=None):
                        show_rt=not args.hide_rt,
                        label_rotation=args.label_rotation,
                        mz_decimals=args.mz_decimals,
-                       rt_decimals=args.rt_decimals)
-        except Exception as e:  # fail-soft: one bad .RAW must not abort the batch
+                       rt_decimals=args.rt_decimals,
+                       max_label_corner=args.max_label_corner,
+                       tic_ymax=args.tic_ymax, bpc_ymax=args.bpc_ymax)
+        except Exception as e:  # noqa: BLE001  (fail-soft: one bad .RAW must not abort the batch)
             print(f"  ! failed on {raw.name}: {e}")
 
     print("Done.")

@@ -2,10 +2,9 @@
 
 import numpy as np
 
+from conftest import FakeReader
 from raw_to_png import core
 from raw_to_png.core import extract_chromatograms, render_png, top_peaks
-
-from conftest import FakeReader
 
 
 def test_extract_ms1_only(mixed_scans):
@@ -140,6 +139,64 @@ def test_render_png_with_mz_and_charge(tmp_path, monkeypatch):
                      show_mz=True, show_charge=True)
     assert out is not None and out.exists()
     assert captured["want_charge"] is True  # show_charge drives the extra read
+
+
+def _max_label(ax):
+    return next(t for t in ax.texts if t.get_text().startswith("Max"))
+
+
+def test_annotate_max_corners():
+    import matplotlib.pyplot as plt
+
+    y = np.array([1.0, 5.0, 2.0])
+    fig, (ax_l, ax_r) = plt.subplots(2)
+    core._annotate_max(ax_l, y, "k", "Max TIC")
+    core._annotate_max(ax_r, y, "k", "Max TIC", corner="right")
+    left, right = _max_label(ax_l), _max_label(ax_r)
+    plt.close(fig)
+    assert left.get_ha() == "left" and left.get_position()[0] < 0.5
+    assert right.get_ha() == "right" and right.get_position()[0] > 0.5
+
+
+def test_annotate_max_rejects_bad_corner():
+    import matplotlib.pyplot as plt
+    import pytest
+
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError):
+        core._annotate_max(ax, np.array([1.0]), "k", "Max TIC", corner="middle")
+    plt.close(fig)
+
+
+def test_render_png_max_label_right(tmp_path, monkeypatch):
+    rt = np.linspace(0, 1, 10)
+    monkeypatch.setattr(core, "get_chromatograms",
+                        lambda path, ms_level=1, want_charge=False: _fake_chromatograms(rt))
+    out = render_png("sample_file.raw", tmp_path, dpi=72, max_label_corner="right")
+    assert out is not None and out.exists()
+
+
+def test_render_png_fixed_ymax(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    rt = np.linspace(0, 1, 10)
+    monkeypatch.setattr(core, "get_chromatograms",
+                        lambda path, ms_level=1, want_charge=False: _fake_chromatograms(rt))
+    seen = {}
+
+    def fake_savefig(fig, path, dpi=None):
+        seen["ylims"] = [ax.get_ylim()[1] for ax in fig.axes]
+
+    monkeypatch.setattr(plt.Figure, "savefig", fake_savefig)
+    render_png("s.raw", tmp_path, dpi=72, tic_ymax=3e10, bpc_ymax=5e9)
+    assert seen["ylims"] == [3e10, 5e9]
+
+
+def test_render_png_rejects_bad_ymax(tmp_path):
+    import pytest
+
+    with pytest.raises(ValueError):
+        render_png("s.raw", tmp_path, tic_ymax=0)
 
 
 def test_render_png_skips_when_empty(tmp_path, monkeypatch):

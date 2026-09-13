@@ -34,9 +34,9 @@ def test_main_ms_level_0_maps_to_none(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["ms_level"] = ms_level
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     rc = main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--ms-level", "0"])
@@ -52,11 +52,11 @@ def test_main_one_bad_raw_does_not_abort_batch(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         seen.append(raw.name)
         if raw.name == "bad.raw":
             raise RuntimeError("boom")
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     rc = main(["--in", str(tmp_path), "--out", str(tmp_path / "out")])
@@ -87,10 +87,10 @@ def test_main_show_mz_and_charge_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["show_mz"] = show_mz
         captured["show_charge"] = show_charge
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"),
@@ -106,9 +106,9 @@ def test_main_hide_intensity_inverts_to_show_intensity(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["show_intensity"] = show_intensity
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"),
@@ -123,9 +123,9 @@ def test_main_hide_rt_inverts_to_show_rt(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["show_rt"] = show_rt
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--hide-rt"])
@@ -138,9 +138,9 @@ def test_main_rt_decimals_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["rt_decimals"] = rt_decimals
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--rt-decimals", "1"])
@@ -153,9 +153,9 @@ def test_main_top_peaks_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["n_peak_labels"] = n_peak_labels
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--top-peaks", "3"])
@@ -168,9 +168,9 @@ def test_main_label_rotation_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["label_rotation"] = label_rotation
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--label-rotation", "0"])
@@ -183,13 +183,53 @@ def test_main_decimals_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["mz_decimals"] = mz_decimals
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--decimals", "2"])
     assert captured["mz_decimals"] == 2
+
+
+def test_main_max_label_corner_passed_through(tmp_path, monkeypatch):
+    (tmp_path / "x.raw").touch()
+    captured = {}
+
+    def fake_render(raw, out_dir, **kwargs):
+        captured["max_label_corner"] = kwargs["max_label_corner"]
+
+    monkeypatch.setattr(cli, "render_png", fake_render)
+    main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--max-label-corner", "right"])
+    assert captured["max_label_corner"] == "right"
+
+
+def test_max_label_corner_defaults_left_and_rejects_bad_value():
+    import pytest
+
+    assert build_parser().parse_args(["--in", "i", "--out", "o"]).max_label_corner == "left"
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--in", "i", "--out", "o", "--max-label-corner", "middle"])
+
+
+def test_main_ymax_passed_through(tmp_path, monkeypatch):
+    (tmp_path / "x.raw").touch()
+    captured = {}
+
+    def fake_render(raw, out_dir, **kwargs):
+        captured.update(tic_ymax=kwargs["tic_ymax"], bpc_ymax=kwargs["bpc_ymax"])
+
+    monkeypatch.setattr(cli, "render_png", fake_render)
+    main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--tic-ymax", "3e10"])
+    assert captured == {"tic_ymax": 3e10, "bpc_ymax": None}
+
+
+def test_ymax_rejects_non_positive_and_non_numeric():
+    import pytest
+
+    for bad in ("0", "-1e9", "abc"):
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--in", "i", "--out", "o", "--tic-ymax", bad])
 
 
 def test_peak_labels_alias_still_accepted():
@@ -204,9 +244,9 @@ def test_main_label_spacing_passed_through(tmp_path, monkeypatch):
 
     def fake_render(raw, out_dir, ms_level=1, dpi=200, n_peak_labels=5, label_spacing=0.05,
                     show_mz=False, show_charge=False, show_intensity=True, show_rt=True,
-                    label_rotation=-60, mz_decimals=4, rt_decimals=2):
+                    label_rotation=-60, mz_decimals=4, rt_decimals=2,
+                    max_label_corner="left", tic_ymax=None, bpc_ymax=None):
         captured["label_spacing"] = label_spacing
-        return None
 
     monkeypatch.setattr(cli, "render_png", fake_render)
     main(["--in", str(tmp_path), "--out", str(tmp_path / "out"), "--label-spacing", "0.1"])

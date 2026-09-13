@@ -10,9 +10,9 @@ from raw_to_png.core import (
 __version__ = "0.1.0"
 
 __all__ = [
+    "__version__",
     "extract_chromatograms",
     "get_chromatograms",
     "render_png",
     "top_peaks",
-    "__version__",
 ]
